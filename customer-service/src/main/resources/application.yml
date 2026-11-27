@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: customer-service
+  main:
+    banner-mode: off
+  # Default: an in-memory H2 database, so the service runs with no Docker and no setup.
+  # docker-compose.yml sets SPRING_DATASOURCE_URL/USERNAME/PASSWORD to use PostgreSQL instead.
+  datasource:
+    url: jdbc:h2:mem:customer
+  jpa:
+    hibernate:
+      # Hibernate creates/updates tables from the entities. Fine for a lab;
+      # real projects manage the schema with Flyway or Liquibase.
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: 8082
+  # Use the X-Forwarded-* headers the API gateway adds (host, port and the /api prefix),
+  # so Location headers point at http://localhost:8080/api/... and not at this container.
+  request:
+    header:
+      forwarded:
+        strategy: framework
+        naming: x-forwarded
+        use-prefix: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always # fine for a lab; hide details in production
+
+logging:
+  level:
+    root: warn
+    com.example.canteen: info
+    org.springdoc: error # hide its "enabled by default" reminder
