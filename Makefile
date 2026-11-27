@@ -1,10 +1,10 @@
 # Shortcuts. Each target is one plain command; the README lists them for Windows users.
 .PHONY: build test up down smoke logs
 
-build: ## Build the four jars (skip tests)
+build: ## Build the five jars (skip tests)
 	./mvnw -q package -DskipTests
 
-test: ## Run all tests (no Docker needed)
+test: ## Run all tests (verify, not test: the contract stubs are built in package)
 	./mvnw verify
 
 up: build ## Build images and start everything, wait until healthy

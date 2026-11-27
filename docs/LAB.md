@@ -6,14 +6,16 @@ rate menu items from 1 to 5. Step by step you will:
 1. build its REST API from scratch (entity, repository, service, controller);
 2. test it;
 3. put it in a container, in Docker Compose and behind the API gateway;
-4. make it call menu-service, and make that call survive failures.
+4. make it call menu-service, and make that call survive failures;
+5. protect it with an OAuth 2.0 scope;
+6. see how contract tests stop a change that would break another service.
 
 At the end there are graded exercises.
 
-Plan for about two hours for Parts 0 to 4. Commands are written for bash (Linux, macOS,
-Git Bash on Windows). In Windows cmd or PowerShell, use `mvnw.cmd` instead of `./mvnw`
-and create folders and files in your IDE. Read [README.md](../README.md) first if you
-have not.
+Plan for about two hours for Parts 0 to 4, and 40 minutes for Parts 5 and 6. Commands are
+written for bash (Linux, macOS, Git Bash on Windows). In Windows cmd or PowerShell, use
+`mvnw.cmd` instead of `./mvnw` and create folders and files in your IDE. Read
+[README.md](../README.md) first if you have not.
 
 ---
 
@@ -23,11 +25,12 @@ have not.
 java -version            # should say 21
 docker compose version   # should say v2 or later
 ./mvnw -v                # the first run downloads Maven
-./mvnw verify            # runs all tests, no Docker needed
+./mvnw verify            # runs all tests (one of them uses Docker if it is running)
 ```
 
 You should see `BUILD SUCCESS` and a reactor summary with `menu-service`,
-`customer-service`, `order-service` and `api-gateway`, each `SUCCESS`.
+`customer-service`, `order-service`, `auth-service` and `api-gateway`, each `SUCCESS`.
+Always use `verify` for the whole build, not `test` (docs/TESTING.md says why).
 
 Now start the whole system and check it:
 
@@ -54,11 +57,78 @@ records. Your new service has exactly the same shape.
 mkdir -p review-service/src/main/java/com/example/canteen/review/{controller,service,repository,domain,dto}
 mkdir -p review-service/src/main/resources
 mkdir -p review-service/src/test/java/com/example/canteen/review
-cp customer-service/pom.xml review-service/pom.xml
 ```
 
-In `review-service/pom.xml`, change `customer-service` to `review-service` in
-`<artifactId>` and `<name>`, and write a new `<description>`.
+`review-service/pom.xml` (the same dependencies as customer-service, without its contract
+and Testcontainers parts, which you do not need yet):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example.canteen</groupId>
+        <artifactId>canteen-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>review-service</artifactId>
+    <name>review-service</name>
+    <description>Customers rate menu items from 1 to 5</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+`<finalName>` makes the jar `target/review-service.jar`, which the Dockerfile in Part 3
+copies.
 
 In the root `pom.xml`, add the new module at the end of `<modules>`:
 
@@ -556,13 +626,34 @@ docker compose up -d --build --wait
 docker compose ps
 ```
 
-`review-service` and `review-db` should be `healthy`. Now go through the gateway:
+`review-service` and `review-db` should be `healthy`. Now go through the gateway.
+
+The gateway checks access tokens: only reading the menu is public, and every other
+`/api/...` call needs a token (README, "2. Securing"). Your new route is no exception.
+Without a token:
 
 ```bash
 curl -i -X POST http://localhost:8080/api/reviews \
   -H "Content-Type: application/json" \
   -d '{"menuItemId": 1, "rating": 5, "comment": "Crispy!"}'
 ```
+
+gives `HTTP/1.1 401 Unauthorized`. Get a token from auth-service, through the gateway, and
+keep it in a shell variable for the rest of the lab (`canteen-app-secret` is a dev-only
+value, not a real secret):
+
+```bash
+TOKEN=$(curl -s -u canteen-app:canteen-app-secret \
+  -d grant_type=client_credentials -d "scope=orders customers" \
+  http://localhost:8080/oauth2/token | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+echo "$TOKEN"     # a long eyJ... string
+curl -i -X POST http://localhost:8080/api/reviews \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"menuItemId": 1, "rating": 5, "comment": "Crispy!"}'
+```
+
+The token is valid for one hour. If you get a 401 later, run the `TOKEN=...` line again.
 
 You should see `HTTP/1.1 201 Created` and
 `Location: http://localhost:8080/api/reviews/1`: the address of the gateway, not of the
@@ -584,6 +675,7 @@ Questions to answer in your notes:
 
 ```bash
 curl -i -X POST http://localhost:8080/api/reviews \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"menuItemId": 999, "rating": 1}'
 ```
@@ -688,8 +780,10 @@ Locally that is the menu-service debug port. In `docker-compose.yml`, under
 ```bash
 ./mvnw -q package -DskipTests
 docker compose up -d --build --wait
-curl -X POST http://localhost:8080/api/reviews -H "Content-Type: application/json" -d '{"menuItemId": 99, "rating": 4}'
-curl -X POST http://localhost:8080/api/reviews -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
+curl -X POST http://localhost:8080/api/reviews -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"menuItemId": 99, "rating": 4}'
+curl -X POST http://localhost:8080/api/reviews -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
 ```
 
 The first gives `{"detail":"Menu item 99 does not exist","status":422,...}`, the second
@@ -701,7 +795,7 @@ The first gives `{"detail":"Menu item 99 does not exist","status":422,...}`, the
 ```bash
 docker compose stop menu-service
 curl -s -w ' -> %{http_code} in %{time_total}s\n' -X POST http://localhost:8080/api/reviews \
-  -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
 ```
 
 You get `500 Internal Server Error` after about 1 second (the connect timeout). Two
@@ -807,7 +901,7 @@ docker compose up -d --build --wait
 docker compose stop menu-service
 for i in 1 2 3 4 5 6; do
   curl -s -w ' -> %{http_code} in %{time_total}s\n' -X POST http://localhost:8080/api/reviews \
-    -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 4}'
 done
 curl http://localhost:8084/actuator/circuitbreakers
 ```
@@ -835,11 +929,193 @@ Resilience4j default) have worked, then it is `CLOSED`. Send a few more reviews 
 | timeouts + `@CircuitBreaker` + 503 fallback | Circuit breaker | ch. 3 |
 | `/actuator/health` + compose `healthcheck` | Health check API | ch. 11 |
 
-To clean up at the end of the lab: `docker compose down -v`.
+Leave the system running for Parts 5 and 6. To clean up at the end of the lab:
+`docker compose down -v`.
 
 ---
 
-## Part 5: Exercises (graded)
+## Part 5: Secure it with a scope (20 min)
+
+Read [docs/SECURING.md](SECURING.md) up to "Where it is in the code" first.
+
+### Step 5.1: 401 and 403
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/orders            # 401: no token
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8080/api/menu \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Idli", "price": 30.00, "available": true}'                        # 403: wrong scope
+```
+
+401 means "who are you?". 403 means "I know who you are, and you may not do this".
+
+### Step 5.2: Look inside your token
+
+```bash
+cut -d. -f2 <<<"$TOKEN" | tr '_-' '/+' | base64 -d 2>/dev/null; echo
+```
+
+You see the claims: `"sub":"canteen-app"`, `"scope":["orders","customers"]`,
+`"iss":"http://auth-service:8090"` and `"exp"` (seconds since 1970). Anyone can read a
+token. Nobody can change it: try editing one character in the middle part and calling
+`/api/orders` with it.
+
+### Step 5.3: Only clients with a `reviews` scope may post reviews
+
+Right now any valid token may post a review: look at
+`api-gateway/src/main/java/com/example/canteen/gateway/SecurityConfig.java`, which ends
+with `.pathMatchers("/api/**").authenticated()`. Make posting reviews need its own scope.
+
+In `SecurityConfig.java`, add this rule **above** the `/api/**` line (the first matching
+rule wins):
+
+```java
+                        .pathMatchers(HttpMethod.POST, "/api/reviews/**").hasAuthority("SCOPE_reviews")
+```
+
+In `auth-service/src/main/resources/application.yml`, give the canteen-app client the new
+scope. Under `canteen-app:` → `registration:`, change the `scopes:` line to:
+
+```yaml
+              scopes: orders, customers, reviews
+```
+
+Rebuild and restart:
+
+```bash
+./mvnw -q package -DskipTests
+docker compose up -d --build --wait
+```
+
+Now:
+
+```bash
+# 1. Your old token: 401. auth-service restarted, made a new signing key, and the gateway
+#    no longer accepts tokens signed with the old one.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8080/api/reviews \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 5}'
+
+# 2. A new token WITHOUT the reviews scope: 403
+TOKEN=$(curl -s -u canteen-app:canteen-app-secret -d grant_type=client_credentials \
+  -d "scope=orders customers" http://localhost:8080/oauth2/token | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8080/api/reviews \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 5}'
+
+# 3. A new token WITH the reviews scope: 201
+TOKEN=$(curl -s -u canteen-app:canteen-app-secret -d grant_type=client_credentials \
+  -d "scope=orders customers reviews" http://localhost:8080/oauth2/token | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8080/api/reviews \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 5}'
+```
+
+You should see `401`, `403`, `201`. Reading reviews (`GET /api/reviews?menuItemId=1`)
+still works with any valid token.
+
+Finally, write the rule down as a test, in
+`api-gateway/src/test/java/com/example/canteen/gateway/GatewaySecurityTest.java`. The test
+replaces every service with one fake backend, so first tell it about the new one. In
+`routeToBackend`, add:
+
+```java
+        registry.add("REVIEW_SERVICE_URL", backend::url);
+```
+
+Then add two rows to the table of `checksScopes`:
+
+```
+            POST   | /api/reviews     | orders customers     | 403
+            POST   | /api/reviews     | reviews              | 200
+```
+
+and run `./mvnw verify -pl api-gateway`. (200, not 201: in this test the fake backend
+answers instead of review-service.)
+
+### Step 5.4: Questions
+
+1. Post a review straight to review-service's debug port, with no token at all:
+   `curl -i -X POST http://localhost:8084/reviews -H "Content-Type: application/json" -d '{"menuItemId": 1, "rating": 5}'`.
+   Why does that work? What would stop it in production? (docs/SECURING.md, "Perimeter
+   security or zero trust".)
+2. The canteen-app secret is in `application.yml`, in Git. Why is that acceptable here
+   and never in a real project? Where would a real secret live?
+3. Why does the client have to ask for the `reviews` scope, instead of getting every scope
+   it is allowed by default?
+
+---
+
+## Part 6: Contract tests (20 min)
+
+Read [docs/TESTING.md](TESTING.md), "Contract testing", first.
+
+### Step 6.1: One contract, two tests
+
+Open `menu-service/src/test/resources/contracts/order-service/findItemsByIds.yml`: what
+order-service sends to menu-service and what it needs back. Then build menu-service and
+look at what the contract plugin made from it:
+
+```bash
+./mvnw -q verify -pl menu-service
+cat menu-service/target/generated-test-sources/contracts/com/example/canteen/menu/contracts/Order_serviceTest.java
+jar tf menu-service/target/menu-service-stubs.jar
+```
+
+The generated test sends the contract's request to menu-service's real controller and
+checks the answer. The stubs jar holds the same contract as a WireMock mapping
+(`mappings/order-service/findItemsByIds.json`), which order-service's
+`ConsumerContractTest` calls instead of the real menu-service.
+
+### Step 6.2: Break the provider
+
+The menu team decides that `price` should be called `amount`. In
+`menu-service/src/main/java/com/example/canteen/menu/dto/MenuItemResponse.java`, rename
+the record component `price` to `amount`. The menu team also "fixes" its own test: in
+`MenuControllerTest`, change `jsonPath("$[1].price")` to `jsonPath("$[1].amount")`.
+
+Build everything:
+
+```bash
+./mvnw verify
+```
+
+Questions:
+
+1. Which module fails, and which test? Read the assertion message.
+2. Which modules are `SKIPPED`, and why is that good news for order-service?
+3. Without the contract test, menu-service's own tests are green. What would happen to
+   orders after menu-service is deployed? (Look at `MenuItemDto` in order-service.)
+
+Undo the change: `git checkout menu-service`.
+
+### Step 6.3: Break the consumer
+
+Now order-service changes. In
+`order-service/src/main/java/com/example/canteen/order/client/CustomerClient.java`,
+delete the line `.accept(MediaType.APPLICATION_JSON) // part of the contract ...`.
+
+```bash
+./mvnw verify
+```
+
+Questions:
+
+1. Which tests fail? Find WireMock's "Request was not matched" table in the output.
+   Which line does it mark with `<<<<<`?
+2. `DownstreamCallsTest` also calls a fake customer-service. Why does it still pass?
+3. `customerClientTreatsUnknownCustomerAsEmpty` still passes too, but for the wrong
+   reason. Why? (What status does WireMock send when no stub matches?)
+
+Undo the change: `git checkout order-service`.
+
+### Step 6.4: Questions
+
+1. order-service now wants each customer's email for a receipt. In which module do you
+   change a contract file first, and who must agree before that change is merged?
+2. Why is it fine for customer-service to add a `phone` field to its JSON without asking
+   order-service?
+
+---
+
+## Part 7: Exercises (graded)
 
 Hand in your code (a git branch or a zip) and a short `ANSWERS.md`. Each exercise is
 graded on three things: it works (paste curl output or a passing test), it has a test,
@@ -946,3 +1222,24 @@ fallback can be a small `@RestController` inside the gateway. Extend
 
 Answer: Now there is a circuit breaker in the gateway *and* in order-service. Is that
 redundant? What does each one protect?
+
+### Exercise 6 (bonus, 10 points): Zero trust for menu-service
+
+Today only the gateway checks tokens, so `curl -X POST http://localhost:8081/menu ...`
+on the debug port changes the menu without any token. Make menu-service check tokens
+itself (docs/SECURING.md, "Perimeter security or zero trust"):
+
+- add `spring-boot-starter-security-oauth2-resource-server` to menu-service, and the
+  same `spring.security.oauth2.resourceserver.jwt` settings as the gateway (in
+  `docker-compose.yml`, set `AUTH_SERVICE_URL` and `AUTH_ISSUER` for menu-service);
+- `GET /menu/**` and `/actuator/health` stay open; everything else needs
+  `SCOPE_menu.write`;
+- `MenuControllerTest` needs `.with(jwt()...)` from `spring-security-test` on its `POST`;
+  add a test that a `POST` without a token gives 401.
+
+Show that `POST` on port 8081 without a token now gives 401, and that `scripts/smoke.sh`
+still ends with `PASS`.
+
+Answer: order-service also calls menu-service (`GET /menu?ids=...`). Why does that call
+still work? If you also protected that endpoint, which token should order-service send:
+the caller's, or its own? Give one advantage of each.
