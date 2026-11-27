@@ -1,0 +1,16 @@
+# Consumer-driven contract between order-service (consumer) and customer-service (producer).
+# order-service only reads "id" and "name", so the contract names only those two fields:
+# customer-service may add fields freely, but must not rename or remove these.
+description: order-service checks that a customer exists before it places an order
+request:
+  method: GET
+  url: /customers/1
+  headers:
+    Accept: application/json
+response:
+  status: 200
+  headers:
+    Content-Type: application/json
+  body:
+    id: 1
+    name: Asha

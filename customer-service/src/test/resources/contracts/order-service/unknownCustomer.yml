@@ -1,0 +1,12 @@
+# The "no such customer" answer is part of the contract too. order-service turns a 404
+# into "Customer 999 does not exist" (422), but any other error into "customer-service
+# is unavailable" (503). If customer-service answered 200 with an empty body, or 500,
+# orders would break. So the status code is pinned here.
+description: order-service gets 404 for a customer that does not exist
+request:
+  method: GET
+  url: /customers/999
+  headers:
+    Accept: application/json
+response:
+  status: 404

@@ -4,6 +4,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -29,6 +30,7 @@ public class CustomerClient {
         try {
             return Optional.ofNullable(restClient.get()
                     .uri("/customers/{id}", id)
+                    .accept(MediaType.APPLICATION_JSON) // part of the contract with customer-service
                     .retrieve()
                     .body(CustomerDto.class));
         } catch (HttpClientErrorException.NotFound notFound) {

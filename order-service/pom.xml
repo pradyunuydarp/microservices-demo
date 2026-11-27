@@ -67,6 +67,44 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Consumer side of the contracts: Stub Runner starts WireMock servers that answer
+             exactly as the contracts say. The stubs come from the two "stubs" jars below,
+             which menu-service and customer-service build from their contracts. This is not
+             shared code: a stubs jar holds only JSON request/response pairs.
+             The stubs jars exist only after those modules' "package" phase, so run
+             ./mvnw verify (or package) from the root, not ./mvnw test. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-contract-stub-runner</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.example.canteen</groupId>
+            <artifactId>menu-service</artifactId>
+            <version>${project.version}</version>
+            <classifier>stubs</classifier>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.example.canteen</groupId>
+            <artifactId>customer-service</artifactId>
+            <version>${project.version}</version>
+            <classifier>stubs</classifier>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>

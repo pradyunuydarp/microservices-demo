@@ -1,0 +1,26 @@
+# Consumer-driven contract between order-service (consumer) and menu-service (producer).
+# order-service wrote down what it sends and what it needs back; menu-service must keep it.
+# - menu-service's build turns this file into a test that runs against menu-service.
+# - It also turns it into a WireMock stub, which order-service's tests call instead of
+#   the real menu-service.
+description: order-service reads several menu items with one batch request
+request:
+  method: GET                 # HTTP method and path
+  urlPath: /menu
+  queryParameters:
+    ids: "1,3"
+  headers:                    # request headers order-service sends
+    Accept: application/json
+response:                     # what order-service relies on: status, content type, fields
+  status: 200
+  headers:
+    Content-Type: application/json
+  body:
+    - id: 1
+      name: Masala Dosa
+      price: 60.00
+      available: true
+    - id: 3
+      name: Filter Coffee
+      price: 20.00
+      available: true

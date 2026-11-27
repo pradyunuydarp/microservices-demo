@@ -59,6 +59,12 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Contract tests: runs the tests generated from src/test/resources/contracts -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-contract-verifier</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -67,6 +73,25 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- Producer side of the contracts in src/test/resources/contracts:
+                 1. generates a JUnit test per contract (target/generated-test-sources/contracts),
+                    which must pass against this service before the build succeeds;
+                 2. turns each contract into a WireMock stub and packs them into
+                    target/menu-service-stubs.jar, which order-service's tests use. -->
+            <plugin>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-contract-maven-plugin</artifactId>
+                <extensions>true</extensions>
+                <configuration>
+                    <testFramework>JUNIT5</testFramework>
+                    <!-- Regenerate tests and stubs on every build. The incremental mode can
+                         miss an edited contract and then silently skips its test. -->
+                    <incrementalContractTests>false</incrementalContractTests>
+                    <incrementalContractStubs>false</incrementalContractStubs>
+                    <incrementalContractStubsJar>false</incrementalContractStubsJar>
+                    <baseClassForTests>com.example.canteen.menu.contracts.ContractVerifierBase</baseClassForTests>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -4,6 +4,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -33,6 +34,7 @@ public class MenuClient {
         String idList = ids.stream().map(String::valueOf).collect(Collectors.joining(","));
         MenuItemDto[] items = restClient.get()
                 .uri("/menu?ids={ids}", idList)
+                .accept(MediaType.APPLICATION_JSON) // part of the contract with menu-service
                 .retrieve()
                 .body(MenuItemDto[].class);
         return items == null ? List.of() : List.of(items);

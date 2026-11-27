@@ -33,6 +33,9 @@
         <spring-cloud.version>2026.0.0</spring-cloud.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <springdoc.version>3.2.1</springdoc.version>
+        <!-- Spring Cloud Contract is not part of the 2026.0.0 release train, so we pick its
+             version here. 5.0.x is built for Spring Boot 4. -->
+        <spring-cloud-contract.version>5.0.3</spring-cloud-contract.version>
     </properties>
 
     <dependencyManagement>
@@ -42,6 +45,14 @@
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
                 <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring Cloud Contract: consumer-driven contract tests (verifier + stub runner). -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-contract-dependencies</artifactId>
+                <version>${spring-cloud-contract.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -59,6 +70,15 @@
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.cloud</groupId>
+                    <artifactId>spring-cloud-contract-maven-plugin</artifactId>
+                    <version>${spring-cloud-contract.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <!-- Load Mockito as a Java agent in tests (recommended by Mockito on JDK 21+;
                  avoids the "Mockito is currently self-attaching" warning). -->
