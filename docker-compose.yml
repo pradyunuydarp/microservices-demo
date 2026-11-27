@@ -1,0 +1,127 @@
+# Campus canteen: 4 Spring Boot services + 3 PostgreSQL databases.
+#
+#   ./mvnw -q package -DskipTests      # build the jars on your machine
+#   docker compose up --build          # build images from those jars and start everything
+#
+# All containers share one network (the default one). Docker's built-in DNS lets them find
+# each other by service name, e.g. http://menu-service:8081 - this is our service discovery.
+#
+# The database passwords below are throwaway values for local development, not secrets.
+
+services:
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080" # the only port real clients need
+    environment:
+      MENU_SERVICE_URL: http://menu-service:8081
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+    # depends_on only orders the START. Once running, every service must cope with the others being down.
+    depends_on:
+      menu-service:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  menu-service:
+    build: ./menu-service
+    ports:
+      - "8081:8081" # debug only - real clients go through the gateway
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://menu-db:5432/menu
+      SPRING_DATASOURCE_USERNAME: menu
+      SPRING_DATASOURCE_PASSWORD: menu
+    depends_on:
+      menu-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  customer-service:
+    build: ./customer-service
+    ports:
+      - "8082:8082" # debug only - real clients go through the gateway
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customer
+      SPRING_DATASOURCE_USERNAME: customer
+      SPRING_DATASOURCE_PASSWORD: customer
+    depends_on:
+      customer-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "8083:8083" # debug only - real clients go through the gateway
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+      SPRING_DATASOURCE_USERNAME: orders
+      SPRING_DATASOURCE_PASSWORD: orders
+      MENU_SERVICE_URL: http://menu-service:8081
+      CUSTOMER_SERVICE_URL: http://customer-service:8082
+    # No depends_on menu-service/customer-service on purpose: order-service starts without
+    # them and answers 503 while they are down (see the circuit breakers).
+    depends_on:
+      order-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Database per service: each service has its own PostgreSQL with its own user.
+  # No ports are published; only the owning service talks to its database.
+
+  menu-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: menu
+      POSTGRES_USER: menu
+      POSTGRES_PASSWORD: menu
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U menu -d menu"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  customer-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: customer
+      POSTGRES_USER: customer
+      POSTGRES_PASSWORD: customer
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer -d customer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  order-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

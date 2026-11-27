@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: api-gateway
+  main:
+    banner-mode: off
+  cloud:
+    # No discovery server (Eureka, Consul): Docker's DNS finds the services by name.
+    discovery:
+      enabled: false
+    gateway:
+      server:
+        webflux:
+          # Each route: if the path matches, strip the first segment (/api) and forward.
+          #   GET /api/menu?ids=1,2  ->  GET http://menu-service:8081/menu?ids=1,2
+          routes:
+            - id: menu-service
+              uri: ${MENU_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/menu/**
+              filters:
+                - StripPrefix=1
+            - id: customer-service
+              uri: ${CUSTOMER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/customers/**
+              filters:
+                - StripPrefix=1
+            - id: order-service
+              uri: ${ORDER_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/orders/**
+              filters:
+                - StripPrefix=1
+          # The gateway needs timeouts too. Longer than order-service's own, so that
+          # order-service can answer with its own clear 503 first.
+          httpclient:
+            connect-timeout: 1000 # milliseconds
+            response-timeout: 10s
+          # Send X-Forwarded-Host/-Port/-Proto/-Prefix to the services so the Location headers
+          # they build point at the gateway. The regex lists proxies in FRONT of the gateway
+          # whose X-Forwarded headers we keep; there are none, so it matches nothing.
+          trusted-proxies: "^$"
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway # /actuator/gateway/routes lists the routes above
+  endpoint:
+    gateway:
+      access: read-only
+    health:
+      show-details: always # fine for a lab; hide details in production
+
+logging:
+  level:
+    root: warn
+    com.example.canteen: info
+    # hides a deprecation warning about Spring Cloud Gateway's own config classes
+    org.hibernate.validator.internal.metadata.aggregated: error
