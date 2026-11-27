@@ -7,6 +7,11 @@
 # each other by service name, e.g. http://menu-service:8081 - this is our service discovery.
 #
 # The database passwords below are throwaway values for local development, not secrets.
+#
+# Container hardening on every Java service (the images already run as a non-root user):
+#   security_opt no-new-privileges  a process can never gain more rights (no setuid tricks)
+#   cap_drop ALL                    no Linux capabilities at all; a web app needs none
+#   read_only + tmpfs /tmp          the file system is read-only; only /tmp (in memory) is writable
 
 services:
 
@@ -20,6 +25,10 @@ services:
       ORDER_SERVICE_URL: http://order-service:8083
       AUTH_SERVICE_URL: http://auth-service:8090 # token endpoint route + public keys (JWKS)
       AUTH_ISSUER: http://auth-service:8090      # accept only tokens with this "iss" claim
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     # depends_on only orders the START. Once running, every service must cope with the others being down.
     depends_on:
       menu-service:
@@ -44,6 +53,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://menu-db:5432/menu
       SPRING_DATASOURCE_USERNAME: menu
       SPRING_DATASOURCE_PASSWORD: menu
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     depends_on:
       menu-db:
         condition: service_healthy
@@ -61,6 +74,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customer
       SPRING_DATASOURCE_USERNAME: customer
       SPRING_DATASOURCE_PASSWORD: customer
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     depends_on:
       customer-db:
         condition: service_healthy
@@ -80,6 +97,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: orders
       MENU_SERVICE_URL: http://menu-service:8081
       CUSTOMER_SERVICE_URL: http://customer-service:8082
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     # No depends_on menu-service/customer-service on purpose: order-service starts without
     # them and answers 503 while they are down (see the circuit breakers).
     depends_on:
@@ -99,6 +120,10 @@ services:
       - "8090:8090" # debug only - clients get tokens through the gateway (POST /oauth2/token)
     environment:
       AUTH_ISSUER: http://auth-service:8090
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/actuator/health"]
       interval: 5s
