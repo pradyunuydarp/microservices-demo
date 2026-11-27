@@ -1,0 +1,124 @@
+# Every endpoint of the canteen system, ready to click.
+# Works with the VS Code "REST Client" extension and the IntelliJ HTTP Client.
+# Start the system first:  ./mvnw -q package -DskipTests && docker compose up -d --build --wait
+#
+# Real clients use only the gateway (port 8080). The 808x "debug" ports talk to one
+# service directly, which is handy for actuator endpoints and Swagger UI.
+
+@gateway = http://localhost:8080
+@menu = http://localhost:8081
+@customers = http://localhost:8082
+@orders = http://localhost:8083
+
+### ---------- Menu (menu-service) ----------
+
+### List the whole menu
+GET {{gateway}}/api/menu
+
+### Batch read: several items in one request
+GET {{gateway}}/api/menu?ids=1,3,6
+
+### One item
+GET {{gateway}}/api/menu/1
+
+### Unknown item -> 404 problem detail
+GET {{gateway}}/api/menu/999
+
+### Add an item -> 201 Created + Location
+POST {{gateway}}/api/menu
+Content-Type: application/json
+
+{"name": "Idli", "price": 30.00, "available": true}
+
+### Invalid item -> 400 with an "errors" map
+POST {{gateway}}/api/menu
+Content-Type: application/json
+
+{"name": "", "price": -5}
+
+### Replace an item (use the id returned above)
+PUT {{gateway}}/api/menu/7
+Content-Type: application/json
+
+{"name": "Idli (2 pcs)", "price": 35.00, "available": true}
+
+### Delete an item -> 204 No Content
+DELETE {{gateway}}/api/menu/7
+
+### ---------- Customers (customer-service) ----------
+
+### Register a customer -> 201 Created + Location
+POST {{gateway}}/api/customers
+Content-Type: application/json
+
+{"name": "Asha", "email": "asha@campus.edu"}
+
+### Same email again -> 409 Conflict
+POST {{gateway}}/api/customers
+Content-Type: application/json
+
+{"name": "Asha again", "email": "asha@campus.edu"}
+
+### List customers
+GET {{gateway}}/api/customers
+
+### One customer
+GET {{gateway}}/api/customers/1
+
+### ---------- Orders (order-service, which calls the other two) ----------
+
+### Place an order -> 201 Created, total 140.00
+POST {{gateway}}/api/orders
+Content-Type: application/json
+
+{"customerId": 1, "items": [{"menuItemId": 1, "quantity": 2}, {"menuItemId": 3, "quantity": 1}]}
+
+### Unknown customer -> 422
+POST {{gateway}}/api/orders
+Content-Type: application/json
+
+{"customerId": 999, "items": [{"menuItemId": 1, "quantity": 1}]}
+
+### Sold-out item (Mango Lassi) -> 422
+POST {{gateway}}/api/orders
+Content-Type: application/json
+
+{"customerId": 1, "items": [{"menuItemId": 6, "quantity": 1}]}
+
+### Invalid order -> 400
+POST {{gateway}}/api/orders
+Content-Type: application/json
+
+{"customerId": 1, "items": [{"menuItemId": 1, "quantity": 0}]}
+
+### List orders
+GET {{gateway}}/api/orders
+
+### One order
+GET {{gateway}}/api/orders/1
+
+### ---------- Operations (debug ports) ----------
+
+### Circuit breaker state: CLOSED, OPEN or HALF_OPEN
+GET {{orders}}/actuator/circuitbreakers
+
+### The last circuit breaker events (successes, errors, state changes)
+GET {{orders}}/actuator/circuitbreakerevents
+
+### Health of each service
+GET {{gateway}}/actuator/health
+
+###
+GET {{menu}}/actuator/health
+
+###
+GET {{customers}}/actuator/health
+
+###
+GET {{orders}}/actuator/health
+
+### The gateway's routes
+GET {{gateway}}/actuator/gateway/routes
+
+### OpenAPI description of a service (Swagger UI: open {{orders}}/swagger-ui.html in a browser)
+GET {{orders}}/v3/api-docs
