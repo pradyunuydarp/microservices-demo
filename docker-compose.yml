@@ -1,4 +1,4 @@
-# Campus canteen: 4 Spring Boot services + 3 PostgreSQL databases.
+# Campus canteen: 5 Spring Boot services + 3 PostgreSQL databases.
 #
 #   ./mvnw -q package -DskipTests      # build the jars on your machine
 #   docker compose up --build          # build images from those jars and start everything
@@ -18,6 +18,8 @@ services:
       MENU_SERVICE_URL: http://menu-service:8081
       CUSTOMER_SERVICE_URL: http://customer-service:8082
       ORDER_SERVICE_URL: http://order-service:8083
+      AUTH_SERVICE_URL: http://auth-service:8090 # token endpoint route + public keys (JWKS)
+      AUTH_ISSUER: http://auth-service:8090      # accept only tokens with this "iss" claim
     # depends_on only orders the START. Once running, every service must cope with the others being down.
     depends_on:
       menu-service:
@@ -25,6 +27,8 @@ services:
       customer-service:
         condition: service_healthy
       order-service:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
@@ -83,6 +87,20 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # The security service: an OAuth 2.0 authorization server that issues JWT access tokens.
+  # Its dev client secrets are in auth-service/src/main/resources/application.yml.
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8090:8090" # debug only - clients get tokens through the gateway (POST /oauth2/token)
+    environment:
+      AUTH_ISSUER: http://auth-service:8090
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/actuator/health"]
       interval: 5s
       timeout: 3s
       retries: 30

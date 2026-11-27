@@ -2,17 +2,71 @@
 # Works with the VS Code "REST Client" extension and the IntelliJ HTTP Client.
 # Start the system first:  ./mvnw -q package -DskipTests && docker compose up -d --build --wait
 #
-# Real clients use only the gateway (port 8080). The 808x "debug" ports talk to one
+# Real clients use only the gateway (port 8080). The 808x/8090 "debug" ports talk to one
 # service directly, which is handy for actuator endpoints and Swagger UI.
+#
+# Most calls need an access token (README, "2. Securing"). First run the two token requests
+# below ("Get a token for canteen-app" and "... for canteen-admin").
+#   VS Code REST Client: @token and @adminToken then fill themselves from those answers.
+#   IntelliJ: copy each "access_token" value from the answer and paste it after the "="
+#   of @token / @adminToken instead.
 
 @gateway = http://localhost:8080
 @menu = http://localhost:8081
 @customers = http://localhost:8082
 @orders = http://localhost:8083
+@auth = http://localhost:8090
+
+@token = {{appToken.response.body.access_token}}
+@adminToken = {{adminToken.response.body.access_token}}
+
+### ---------- Tokens (auth-service, through the gateway) ----------
+
+### Get a token for canteen-app (scopes: orders, customers)
+# The Basic header is "canteen-app:canteen-app-secret" in Base64. Base64 is an encoding,
+# not encryption: anyone can decode it, so real clients send it only over TLS.
+# These client secrets are dev-only values from auth-service's application.yml.
+# @name appToken
+POST {{gateway}}/oauth2/token
+Authorization: Basic Y2FudGVlbi1hcHA6Y2FudGVlbi1hcHAtc2VjcmV0
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=orders%20customers
+
+### Get a token for canteen-admin (scope: menu.write) - "canteen-admin:canteen-admin-secret"
+# @name adminToken
+POST {{gateway}}/oauth2/token
+Authorization: Basic Y2FudGVlbi1hZG1pbjpjYW50ZWVuLWFkbWluLXNlY3JldA==
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=menu.write
+
+### Wrong client secret -> 401 invalid_client
+POST {{gateway}}/oauth2/token
+Authorization: Basic Y2FudGVlbi1hcHA6d3Jvbmc=
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=orders
+
+### canteen-app asks for a scope it was not given -> 400 invalid_scope
+POST {{gateway}}/oauth2/token
+Authorization: Basic Y2FudGVlbi1hcHA6Y2FudGVlbi1hcHAtc2VjcmV0
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=menu.write
+
+### No token -> 401 Unauthorized, WWW-Authenticate: Bearer
+GET {{gateway}}/api/orders
+
+### auth-service's public keys: the gateway checks token signatures with them
+GET {{auth}}/oauth2/jwks
+
+### auth-service's metadata: issuer, token endpoint, key location
+GET {{auth}}/.well-known/oauth-authorization-server
 
 ### ---------- Menu (menu-service) ----------
 
-### List the whole menu
+### List the whole menu (public: no token needed)
 GET {{gateway}}/api/menu
 
 ### Batch read: several items in one request
@@ -24,78 +78,99 @@ GET {{gateway}}/api/menu/1
 ### Unknown item -> 404 problem detail
 GET {{gateway}}/api/menu/999
 
-### Add an item -> 201 Created + Location
+### Add an item with the canteen-app token -> 403 Forbidden (no menu.write scope)
 POST {{gateway}}/api/menu
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Idli", "price": 30.00, "available": true}
+
+### Add an item with the admin token -> 201 Created + Location
+POST {{gateway}}/api/menu
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {"name": "Idli", "price": 30.00, "available": true}
 
 ### Invalid item -> 400 with an "errors" map
 POST {{gateway}}/api/menu
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {"name": "", "price": -5}
 
 ### Replace an item (use the id returned above)
 PUT {{gateway}}/api/menu/7
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
 
 {"name": "Idli (2 pcs)", "price": 35.00, "available": true}
 
 ### Delete an item -> 204 No Content
 DELETE {{gateway}}/api/menu/7
+Authorization: Bearer {{adminToken}}
 
 ### ---------- Customers (customer-service) ----------
 
 ### Register a customer -> 201 Created + Location
 POST {{gateway}}/api/customers
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"name": "Asha", "email": "asha@campus.edu"}
 
 ### Same email again -> 409 Conflict
 POST {{gateway}}/api/customers
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"name": "Asha again", "email": "asha@campus.edu"}
 
 ### List customers
 GET {{gateway}}/api/customers
+Authorization: Bearer {{token}}
 
 ### One customer
 GET {{gateway}}/api/customers/1
+Authorization: Bearer {{token}}
 
 ### ---------- Orders (order-service, which calls the other two) ----------
 
 ### Place an order -> 201 Created, total 140.00
 POST {{gateway}}/api/orders
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"customerId": 1, "items": [{"menuItemId": 1, "quantity": 2}, {"menuItemId": 3, "quantity": 1}]}
 
 ### Unknown customer -> 422
 POST {{gateway}}/api/orders
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"customerId": 999, "items": [{"menuItemId": 1, "quantity": 1}]}
 
 ### Sold-out item (Mango Lassi) -> 422
 POST {{gateway}}/api/orders
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"customerId": 1, "items": [{"menuItemId": 6, "quantity": 1}]}
 
 ### Invalid order -> 400
 POST {{gateway}}/api/orders
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"customerId": 1, "items": [{"menuItemId": 1, "quantity": 0}]}
 
 ### List orders
 GET {{gateway}}/api/orders
+Authorization: Bearer {{token}}
 
 ### One order
 GET {{gateway}}/api/orders/1
+Authorization: Bearer {{token}}
 
 ### ---------- Operations (debug ports) ----------
 
@@ -116,6 +191,9 @@ GET {{customers}}/actuator/health
 
 ###
 GET {{orders}}/actuator/health
+
+###
+GET {{auth}}/actuator/health
 
 ### The gateway's routes
 GET {{gateway}}/actuator/gateway/routes

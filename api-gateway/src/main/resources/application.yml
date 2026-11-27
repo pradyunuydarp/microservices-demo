@@ -31,6 +31,12 @@ spring:
                 - Path=/api/orders/**
               filters:
                 - StripPrefix=1
+            # Clients get their access token through the gateway too: it stays the single entry point.
+            #   POST /oauth2/token  ->  POST http://auth-service:8090/oauth2/token
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:8090}
+              predicates:
+                - Path=/oauth2/token
           # The gateway needs timeouts too. Longer than order-service's own, so that
           # order-service can answer with its own clear 503 first.
           httpclient:
@@ -40,6 +46,16 @@ spring:
           # they build point at the gateway. The regex lists proxies in FRONT of the gateway
           # whose X-Forwarded headers we keep; there are none, so it matches nothing.
           trusted-proxies: "^$"
+
+  # The gateway is an OAuth 2.0 resource server (see SecurityConfig). It checks each JWT with
+  # auth-service's public keys (JWKS) and accepts only tokens whose "iss" claim is the issuer below.
+  # Both are fixed names, so tokens validate the same however the client fetched them.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8090}/oauth2/jwks
+          issuer-uri: ${AUTH_ISSUER:http://auth-service:8090}
 
 server:
   port: 8080

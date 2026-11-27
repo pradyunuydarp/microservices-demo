@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: auth-service
+  main:
+    banner-mode: off
+  security:
+    oauth2:
+      authorizationserver:
+        # The "iss" (issuer) claim of every token. A fixed name, so a token looks the same
+        # whether it was fetched through the gateway or from this service's debug port.
+        # The gateway accepts only tokens from this issuer.
+        issuer: ${AUTH_ISSUER:http://auth-service:8090}
+        # Two clients that may ask for tokens with the client-credentials grant.
+        # DEV ONLY: these secrets are throwaway values for a local lab, written here on
+        # purpose so everyone can try them. "{noop}" means "stored as plain text". A real
+        # server stores only a hash ({bcrypt}...) and takes it from a secret store, for
+        # example by setting CANTEEN_APP_SECRET and CANTEEN_ADMIN_SECRET.
+        client:
+          canteen-app: # the canteen's app: places orders and registers customers
+            registration:
+              client-id: canteen-app
+              client-secret: "{noop}${CANTEEN_APP_SECRET:canteen-app-secret}"
+              client-authentication-methods: client_secret_basic
+              authorization-grant-types: client_credentials
+              scopes: orders, customers
+            token:
+              access-token-time-to-live: 1h # long, so a class can reuse one token; real ones live minutes
+          canteen-admin: # the canteen manager: may also change the menu
+            registration:
+              client-id: canteen-admin
+              client-secret: "{noop}${CANTEEN_ADMIN_SECRET:canteen-admin-secret}"
+              client-authentication-methods: client_secret_basic
+              authorization-grant-types: client_credentials
+              scopes: orders, customers, menu.write
+            token:
+              access-token-time-to-live: 1h
+
+server:
+  port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always # fine for a lab; hide details in production
+
+logging:
+  level:
+    root: warn
+    com.example.canteen: info
