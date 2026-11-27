@@ -277,7 +277,8 @@ On purpose, to stay small:
 - **Sagas and messaging** (ch. 3 and 4). Placing an order only *reads* from other
   services, so plain REST is enough. Anything that must *change* data in several services
   (reserve stock, charge a card) needs a saga, usually with asynchronous messages. See the
-  companion event-driven project (`eda-rabbitmq-java`).
+  companion event-driven project,
+  [eda-demo](https://github.com/pradyunuydarp/eda-demo).
 - **Retries, bulkheads and rate limits.** Only timeouts and circuit breakers are here.
   Retries are a lab exercise.
 - **Contract tests** (ch. 10) between order-service and the services it calls.
