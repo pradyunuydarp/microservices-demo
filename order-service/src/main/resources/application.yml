@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: order-service
+  main:
+    banner-mode: off
+  # Default: in-memory H2. docker-compose.yml switches to PostgreSQL with SPRING_DATASOURCE_*.
+  datasource:
+    url: jdbc:h2:mem:order
+  jpa:
+    hibernate:
+      ddl-auto: update # fine for a lab; real projects use Flyway or Liquibase
+    open-in-view: false
+
+server:
+  port: 8083
+  # Use the X-Forwarded-* headers the API gateway adds (host, port and the /api prefix),
+  # so Location headers point at http://localhost:8080/api/... and not at this container.
+  request:
+    header:
+      forwarded:
+        strategy: framework
+        naming: x-forwarded
+        use-prefix: true
+
+# Where the services we call live, and how long we wait for them.
+# Locally they run on localhost; docker-compose.yml sets the *_URL variables to
+# http://menu-service:8081 etc. (Docker's DNS resolves the service names).
+downstream:
+  menu-service-url: ${MENU_SERVICE_URL:http://localhost:8081}
+  customer-service-url: ${CUSTOMER_SERVICE_URL:http://localhost:8082}
+  connect-timeout: 1s
+  read-timeout: 2s
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5                    # judge the last 5 calls
+        minimum-number-of-calls: 5                # ... but only once there have been 5
+        failure-rate-threshold: 50                # OPEN when half of them failed
+        wait-duration-in-open-state: 10s          # while OPEN, fail fast without calling
+        automatic-transition-from-open-to-half-open-enabled: true
+        permitted-number-of-calls-in-half-open-state: 2  # HALF_OPEN: let 2 trial calls through
+    instances:
+      menu-service:
+        base-config: default
+      customer-service:
+        base-config: default
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # /actuator/circuitbreakers shows each breaker's state (CLOSED, OPEN, HALF_OPEN)
+        include: health,info,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always # fine for a lab; hide details in production
+
+logging:
+  level:
+    root: warn
+    com.example.canteen: info
+    org.springdoc: error
