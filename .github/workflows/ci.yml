@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: jobs may only read the code, unless a job asks for more.
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Unit and integration tests
+    name: Unit, component, integration and contract tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -16,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+      # verify, not test: the contract stubs jars are built in the package phase, and
+      # order-service's tests need them. Testcontainers uses the runner's Docker.
       - run: ./mvnw -B verify
 
   smoke:
@@ -41,3 +47,36 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # Container deployment, step 2: add each image to a registry. Only for pushes to main,
+  # never for pull requests. Uses the workflow's own GITHUB_TOKEN; no extra secret needed.
+  publish:
+    name: Push images to GitHub Container Registry
+    needs: [test, smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io/<owner>/<repo>/...
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build jars
+        run: ./mvnw -B -q package -DskipTests
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build, tag and push one image per service
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY,,}" # image names must be lowercase
+          for service in menu-service customer-service order-service auth-service api-gateway; do
+            docker build \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+              --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              -t "$registry/$service:$GITHUB_SHA" "$service"
+            docker tag "$registry/$service:$GITHUB_SHA" "$registry/$service:latest"
+            docker push --all-tags "$registry/$service"
+          done
